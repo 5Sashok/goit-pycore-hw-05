@@ -1,0 +1,111 @@
+#!/usr/bin/env python
+"""
+Log-analyser.
+
+Usage
+-----
+python main.py <log_file> [level]
+
+* <log_file> – шлях до лог-файлу.
+* [level]    – (необов’язково) INFO | DEBUG | WARNING | ERROR.
+               Якщо задано, скрипт виведе ще й деталі для цього рівня.
+
+Приклад:
+    python main.py system.log
+    python main.py system.log error
+"""
+import sys
+from collections import defaultdict
+from typing import List, Dict
+
+
+# ---------- parser-helpers -------------------------------------------------
+def parse_log_line(line: str) -> Dict[str, str]:
+    """
+    Розбирає рядок логу у словник.
+
+    Формат очікується такий:
+        YYYY-MM-DD HH:MM:SS LEVEL message
+
+    Повертає:
+        {'date': '2024-01-22', 'time': '08:30:01',
+         'level': 'INFO',     'message': 'User logged in successfully.'}
+    """
+    try:
+        date, time, level, *message = line.strip().split(maxsplit=3)
+        return {"date": date, "time": time, "level": level, "message": message[0]}
+    except ValueError:
+        # Неправильний рядок – повертаємо порожній словник,
+        # щоб потім його можна було пропустити.
+        return {}
+
+
+def load_logs(file_path: str) -> List[Dict[str, str]]:
+    """Читає файл та повертає список словників-записів."""
+    logs = []
+    try:
+        with open(file_path, encoding="utf-8") as fh:
+            # використаємо списковий вираз (елемент функціонального програмування)
+            logs = [record for line in fh
+                    if (record := parse_log_line(line))]
+    except FileNotFoundError:
+        sys.exit(f"❌ Файл не знайдено: {file_path}")
+    except OSError as e:
+        sys.exit(f"❌ Помилка читання файлу: {e}")
+    return logs
+
+
+def filter_logs_by_level(logs: List[Dict[str, str]], level: str) -> List[Dict[str, str]]:
+    """Повертає лише записи потрібного рівня (регістр неважливий)."""
+    level = level.upper()
+    # використаємо filter + lambda – ще один елемент функціонального стилю
+    return list(filter(lambda rec: rec["level"] == level, logs))
+
+
+def count_logs_by_level(logs: List[Dict[str, str]]) -> Dict[str, int]:
+    """Підраховує кількість записів для кожного рівня."""
+    counts = defaultdict(int)
+    for rec in logs:
+        counts[rec["level"]] += 1
+    return counts
+
+
+def display_log_counts(counts: Dict[str, int]) -> None:
+    """Виводить зведену таблицю."""
+    print("\nРівень логування | Кількість")
+    print("-----------------|----------")
+    for level in ("INFO", "DEBUG", "ERROR", "WARNING"):
+        print(f"{level:<16}| {counts.get(level, 0)}")
+    print()
+
+
+# ---------- main CLI -------------------------------------------------------
+def main():
+    if len(sys.argv) < 2:
+        print("Використання: python main.py <log_file> [level]")
+        sys.exit(1)
+
+    file_path = sys.argv[1]
+    level_arg = sys.argv[2].upper() if len(sys.argv) > 2 else None
+
+    logs = load_logs(file_path)
+    if not logs:
+        sys.exit("❗️ Файл логу порожній або не містить коректних рядків.")
+
+    # Зведена статистика
+    counts = count_logs_by_level(logs)
+    display_log_counts(counts)
+
+    # Деталі для конкретного рівня, якщо запитано
+    if level_arg:
+        details = filter_logs_by_level(logs, level_arg)
+        if not details:
+            print(f"Рівень '{level_arg}' відсутній у файлі.")
+            return
+        print(f"Деталі логів для рівня '{level_arg}':")
+        for rec in details:
+            print(f"{rec['date']} {rec['time']} - {rec['message']}")
+
+
+if __name__ == "__main__":
+    main()
